@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#3b82f6"/>
+    <link rel="manifest" href="manifest.json" />
+    <title>Pedidos Distribuidora</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
+    <script src="https://unpkg.com/jspdf-autotable@latest/dist/jspdf.plugin.autotable.js"></script>
+    <style>
+        @media print {
+            body, html { margin: 0; padding: 0; }
+            .no-print { display: none; }
+            #pdf-view { display: block !important; }
+        }
+        .toast-enter { opacity: 0; transform: translateY(20px); }
+        .toast-enter-active { opacity: 1; transform: translateY(0); transition: opacity 300ms, transform 300ms; }
+        .toast-exit { opacity: 1; transform: translateY(0); }
+        .toast-exit-active { opacity: 0; transform: translateY(20px); transition: opacity 300ms, transform 300ms; }
+        .sync-spin { animation: spin 1.5s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="root"></div>
+    <div id="pdf-view" class="hidden"></div>
+
+    <script type="text/babel">
+        const { jsPDF } = window.jspdf;
+        const API_URL = 'https://distriapi.onzacore.site/api';
+
+        // --- Iconos (sin cambios) ---
+        const PackageIcon = (props) => (<svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16.5 9.4a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0Z"/><path d="M19 13.3a9 9 0 1 1-14 0"/><path d="M12 17.5a2.5 2.5 0 0 1-2.5-2.5V9.4h5v5.6a2.5 2.5 0 0 1-2.5 2.5Z"/></svg>);
+        const Spinner = ({ className }) => (<div className={`animate-spin rounded-full h-6 w-6 border-b-2 ${className || 'border-white'}`}></div>);
+        const UsersIcon = (props) => (<svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>);
+        const LogOutIcon = (props) => (<svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>);
+        const ArrowLeftIcon = (props) => (<svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>);
+        const ShoppingCartIcon = (props) => (<svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>);
+        const SyncIcon = (props) => (<svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>);
+        const PlusIcon = (props) => (<svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>);
+        const EditIcon = (props) => (<svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>);
+        const TrashIcon = (props) => (<svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>);
+        const HistoryIcon = (props) => (<svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>);
+        const EyeIcon = (props) => (<svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>);
+        const SettingsIcon = (props) => (<svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>);
+        const CloudOffIcon = (props) => (<svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3"/><line x1="1" y1="1" x2="23" y2="23"/></svg>);
+
+        // --- Componentes de UI ---
+        const StatusBadge = ({ status }) => {
+            const styles = {
+                pending_sync: { text: 'Pendiente', bg: 'bg-yellow-100', text_color: 'text-yellow-800' },
+                synced: { text: 'Sincronizado', bg: 'bg-green-100', text_color: 'text-green-800' },
+                sync_failed: { text: 'Falló', bg: 'bg-red-100', text_color: 'text-red-800' },
+            };
+            const s = styles[status] || { text: 'Desconocido', bg: 'bg-gray-100', text_color: 'text-gray-800' };
+            return <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${s.bg} ${s.text_color}`}>{s.text}</span>;
+        };
+        const Toast = ({ message, type, onClose }) => {
+            React.useEffect(() => {
+                const timer = setTimeout(onClose, 3000);
+                return () => clearTimeout(timer);
+            }, [onClose]);
+            const bgColor = { success: 'bg-green-500', error: 'bg-red-500', info: 'bg-blue-500'}[type] || 'bg-gray-500';
+            return (<div className={`fixed bottom-4 left-1/2 transform -translate-x-1/2 ${bgColor} text-white px-4 py-2 rounded-lg shadow-lg max-w-md w-full toast-enter toast-enter-active`}>{message}</div>);
+        };
+        const ActionButton = ({ icon, text, onClick, badge, badgeColor }) => (
+            <button onClick={onClick} className="bg-white p-4 rounded-xl shadow-md flex flex-col items-center justify-center text-center hover:bg-gray-50 active:scale-95 transition-transform relative">
+                {badge > 0 && <span className={`absolute top-2 right-2 ${badgeColor} text-white text-xs font-bold rounded-full h-6 w-6 flex items-center justify-center`}>{badge}</span>}
+                <div className="text-blue-600 mb-2">{React.cloneElement(icon, { className: "h-10 w-10" })}</div>
+                <span className="font-semibold text-gray-700">{text}</span>
+            </button>
+        );
+
+        // --- Componentes de Modal ---
+        const QuantityModal = ({ product, existingQuantity, onSave, onCancel }) => {
+            const [quantity, setQuantity] = React.useState(existingQuantity || 1);
+
+            const handleSave = () => {
+                const numQuantity = parseFloat(String(quantity).replace(',', '.'));
+                if (!isNaN(numQuantity) && numQuantity >= 0) {
+                    onSave(product, numQuantity);
+                }
+            };
+            
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
+                        <div className="p-4 text-center">
+                            <img loading="lazy" src={product.imagen_url || 'https://placehold.co/100x100/e2e8f0/e2e8f0?text=...'} alt={product.nombre} className="w-24 h-24 rounded-lg object-cover mx-auto mb-4"/>
+                            <h3 className="text-lg font-bold text-gray-800">{product.nombre}</h3>
+                            <p className="text-blue-600 font-bold mb-4">${product.precio_unitario}</p>
+                            <div className="flex items-center justify-center gap-4">
+                                <button onClick={() => setQuantity(q => Math.max(0, (parseFloat(String(q).replace(',', '.')) || 0) - 1))} className="w-10 h-10 bg-gray-200 rounded-full font-bold text-xl">-</button>
+                                <input 
+                                    type="number"
+                                    step="0.001"
+                                    value={quantity}
+                                    onChange={(e) => setQuantity(e.target.value)}
+                                    className="w-24 text-center text-2xl font-bold border-b-2 border-gray-300 focus:border-blue-500 focus:outline-none"
+                                />
+                                <button onClick={() => setQuantity(q => (parseFloat(String(q).replace(',', '.')) || 0) + 1)} className="w-10 h-10 bg-gray-200 rounded-full font-bold text-xl">+</button>
+                            </div>
+                        </div>
+                        <div className="p-4 flex gap-2 bg-gray-50 rounded-b-2xl">
+                            <button onClick={onCancel} className="w-full bg-gray-200 text-gray-800 font-bold py-3 rounded-lg">Cancelar</button>
+                            <button onClick={handleSave} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg">
+                                {existingQuantity > 0 ? 'Actualizar' : 'Agregar'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Componentes de Vistas ---
+        const VendedorHomePage = ({ user, navigateTo }) => {
+            const [pendingCount, setPendingCount] = React.useState(0);
+            const [badgeColor, setBadgeColor] = React.useState('bg-green-500');
+
+            React.useEffect(() => {
+                const interval = setInterval(() => {
+                    const pedidosPendientes = JSON.parse(localStorage.getItem('pedidos_pendientes') || '[]');
+                    const pendingSyncCount = pedidosPendientes.filter(p => p.status === 'pending_sync').length;
+                    setPendingCount(pendingSyncCount);
+                    if (pendingSyncCount > 0) setBadgeColor('bg-yellow-500');
+                    else setBadgeColor('bg-green-500');
+                }, 1000);
+                return () => clearInterval(interval);
+            }, []);
+
+            return (
+                <div className="bg-white min-h-screen">
+                    <header className="bg-blue-600 text-white p-4 shadow-md sticky top-0 z-10">
+                        <div className="flex justify-between items-center">
+                            <h1 className="text-xl font-bold">{user ? `Hola, ${user.nombre}` : 'Modo Offline'}</h1>
+                            <button onClick={() => navigateTo('config')} title="Configuración"><SettingsIcon className="h-6 w-6"/></button>
+                        </div>
+                    </header>
+                    <main className="p-4 grid grid-cols-2 gap-4">
+                        <ActionButton icon={<UsersIcon/>} text="Clientes" onClick={() => navigateTo('clientes')} />
+                        <ActionButton icon={<ShoppingCartIcon/>} text="Pedidos" onClick={() => navigateTo('pendientes')} badge={pendingCount} badgeColor={badgeColor} />
+                    </main>
+                </div>
+            );
+        };
+
+        const ConfiguracionView = ({ onBack, onLogout, user, onSync, lastSyncTime, syncInProgress }) => {
+            return (
+                <div className="bg-gray-100 min-h-screen">
+                    <header className="bg-white p-4 shadow-md sticky top-0 flex items-center gap-4 z-10">
+                        <button onClick={onBack} className="text-blue-600"><ArrowLeftIcon className="h-6 w-6"/></button>
+                        <h2 className="font-bold text-lg">Configuración y Sincronización</h2>
+                    </header>
+                    <main className="p-4 space-y-6">
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <h3 className="font-bold text-gray-800">Estado de la Cuenta</h3>
+                            {user ? (
+                                <>
+                                    <p className="text-gray-600 mt-2">Conectado como: <span className="font-semibold text-blue-600">{user.nombre}</span></p>
+                                    <p className="text-sm text-gray-500 mt-1">Última sincronización: {lastSyncTime ? new Date(lastSyncTime).toLocaleString() : 'Nunca'}</p>
+                                    <button onClick={onLogout} className="w-full mt-4 bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2">
+                                        <LogOutIcon className="h-5 w-5"/> Cerrar Sesión
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="flex items-center gap-3 mt-2 text-yellow-700">
+                                        <CloudOffIcon className="h-8 w-8"/>
+                                        <p>No has iniciado sesión. Tus pedidos se guardan en este dispositivo.</p>
+                                    </div>
+                                    <button onClick={() => onBack('login')} className="w-full mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">
+                                        Iniciar Sesión para Sincronizar
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <h3 className="font-bold text-gray-800">Sincronización de Datos</h3>
+                            <p className="text-sm text-gray-500 mt-1">Sube tus pedidos pendientes y descarga las listas actualizadas de clientes y productos.</p>
+                            <button onClick={onSync} disabled={!user || syncInProgress} className="w-full mt-4 bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                                {syncInProgress ? <Spinner className="border-white h-5 w-5"/> : <SyncIcon className={`h-5 w-5 ${syncInProgress ? 'sync-spin' : ''}`}/>}
+                                {syncInProgress ? 'Sincronizando...' : 'Sincronizar Agora'}
+                            </button>
+                            {!user && <p className="text-xs text-red-500 mt-2 text-center">Debes iniciar sesión para poder sincronizar.</p>}
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const LoginPage = ({ onLogin, loading, error, onBack }) => {
+            const [email, setEmail] = React.useState('');
+            const [password, setPassword] = React.useState('');
+            
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onLogin(email, password);
+            };
+
+            return (
+                <div className="min-h-screen bg-blue-600 flex flex-col justify-center items-center p-4 font-sans">
+                    <div className="w-full max-w-sm">
+                        <div className="bg-white rounded-2xl shadow-lg p-8 relative">
+                            <button onClick={onBack} className="absolute top-4 left-4 text-gray-400 hover:text-gray-600"><ArrowLeftIcon/></button>
+                            <div className="text-center mb-6"><PackageIcon className="h-16 w-16 text-blue-600 mx-auto" /><h1 className="text-2xl font-bold text-gray-800 mt-2">Iniciar Sesión</h1><p className="text-gray-500">Sincroniza tus datos con la nube.</p></div>
+                            <form onSubmit={handleSubmit}>
+                                <div className="mb-5"><label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="email">Correo</label><input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@email.com" className="w-full px-4 py-3 rounded-lg bg-gray-100 focus:border-blue-500 focus:bg-white focus:outline-none" required /></div>
+                                <div className="mb-6"><label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="password">Contraseña</label><input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••••" className="w-full px-4 py-3 rounded-lg bg-gray-100 focus:border-blue-500 focus:bg-white focus:outline-none" required /></div>
+                                {error && <p className="text-red-500 text-xs italic mb-4 text-center">{error}</p>}
+                                <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center text-lg">{loading ? <Spinner /> : 'Ingresar y Sincronizar'}</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ClientesView = ({ onBack, onSelectCliente, onEditCliente, onAddCliente, onShowHistory }) => {
+            const [clientes, setClientes] = React.useState([]);
+            const [loading, setLoading] = React.useState(true);
+            const [searchTerm, setSearchTerm] = React.useState('');
+            React.useEffect(() => {
+                const storedClientes = localStorage.getItem('clientes');
+                if (storedClientes) { setClientes(JSON.parse(storedClientes)); }
+                setLoading(false);
+            }, []);
+            const filteredClientes = clientes.filter(cliente => cliente.nombre_comercio.toLowerCase().includes(searchTerm.toLowerCase()));
+            return (
+                <div className="bg-gray-100 min-h-screen">
+                    <header className="bg-white p-4 shadow-md sticky top-0 flex items-center gap-4 z-10">
+                        <button onClick={onBack} className="text-blue-600"><ArrowLeftIcon className="h-6 w-6"/></button>
+                        <input type="text" placeholder="Buscar cliente..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full px-4 py-2 rounded-lg bg-gray-200 focus:outline-none"/>
+                        <button onClick={onAddCliente} className="p-2 bg-green-500 text-white rounded-full"><PlusIcon className="h-6 w-6"/></button>
+                    </header>
+                    <main className="p-4">
+                        {loading && <p>Cargando clientes...</p>}
+                        {!loading && filteredClientes.map(cliente => (
+                            <div key={cliente.id} className="bg-white p-4 rounded-lg shadow mb-3 flex justify-between items-center">
+                                <div onClick={() => onSelectCliente(cliente)} className="flex-1 cursor-pointer">
+                                    <p className="font-bold text-gray-800">{cliente.nombre_comercio}</p>
+                                    <p className="text-sm text-gray-600">{cliente.direccion}</p>
+                                </div>
+                                <div className="flex items-center">
+                                    <button onClick={() => onShowHistory(cliente)} className="ml-4 text-gray-400 hover:text-blue-600 p-2"><HistoryIcon className="h-5 w-5"/></button>
+                                    <button onClick={() => onEditCliente(cliente)} className="ml-2 text-gray-400 hover:text-blue-600 p-2"><EditIcon className="h-5 w-5"/></button>
+                                </div>
+                            </div>
+                        ))}
+                        {!loading && filteredClientes.length === 0 && (<p className="text-center text-gray-500 mt-8">No se encontraron clientes.</p>)}
+                    </main>
+                </div>
+            );
+        };
+
+        const ClienteFormView = ({ onBack, cliente, onSave }) => {
+            const [formData, setFormData] = React.useState({ nombre_comercio: '', nombre_contacto: '', direccion: '', telefono: '' });
+            const isEditing = cliente !== null;
+            React.useEffect(() => {
+                if (isEditing) { setFormData(cliente); } 
+                else { setFormData({ nombre_comercio: '', nombre_contacto: '', direccion: '', telefono: '' }); }
+            }, [cliente, isEditing]);
+            const handleChange = (e) => {
+                const { name, value } = e.target;
+                setFormData(prev => ({ ...prev, [name]: value }));
+            };
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSave(formData);
+            };
+            return (
+                <div className="bg-gray-100 min-h-screen">
+                    <header className="bg-white p-4 shadow-md sticky top-0 flex items-center gap-4 z-10">
+                        <button onClick={onBack} className="text-blue-600"><ArrowLeftIcon className="h-6 w-6"/></button>
+                        <h2 className="font-bold text-lg">{isEditing ? 'Editar Cliente' : 'Nuevo Cliente'}</h2>
+                    </header>
+                    <main className="p-4">
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div><label className="text-sm font-medium">Nombre del Comercio</label><input type="text" name="nombre_comercio" value={formData.nombre_comercio} onChange={handleChange} className="w-full p-2 border rounded-lg mt-1" required /></div>
+                            <div><label className="text-sm font-medium">Nombre del Contacto</label><input type="text" name="nombre_contacto" value={formData.nombre_contacto} onChange={handleChange} className="w-full p-2 border rounded-lg mt-1" /></div>
+                            <div><label className="text-sm font-medium">Dirección</label><input type="text" name="direccion" value={formData.direccion} onChange={handleChange} className="w-full p-2 border rounded-lg mt-1" /></div>
+                            <div><label className="text-sm font-medium">Teléfono</label><input type="text" name="telefono" value={formData.telefono} onChange={handleChange} className="w-full p-2 border rounded-lg mt-1" /></div>
+                            <button type="submit" className="w-full bg-green-500 text-white font-bold py-3 rounded-lg mt-4">Guardar Cliente</button>
+                        </form>
+                    </main>
+                </div>
+            );
+        };
+
+        const PedidoView = ({ cliente, onBack, onShowCart, cart, onProductSelect }) => {
+            const [productos, setProductos] = React.useState([]);
+            const [searchTerm, setSearchTerm] = React.useState('');
+            React.useEffect(() => {
+                const storedProductos = localStorage.getItem('productos');
+                if (storedProductos) { setProductos(JSON.parse(storedProductos)); }
+            }, []);
+            const filteredProductos = productos.filter(p => p.nombre.toLowerCase().includes(searchTerm.toLowerCase()));
+            return (
+                <div className="flex flex-col h-screen bg-gray-100">
+                    <header className="bg-white p-4 shadow-md sticky top-0 flex items-center gap-4 z-10">
+                        <button onClick={() => onBack(cart)} className="text-blue-600"><ArrowLeftIcon className="h-6 w-6"/></button>
+                        <div><h2 className="font-bold text-lg">{cliente.nombre_comercio}</h2><p className="text-xs text-gray-500">Nuevo Pedido</p></div>
+                    </header>
+                    <div className="p-4"><input type="text" placeholder="Buscar producto..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full px-4 py-2 mb-4 border rounded-lg"/></div>
+                    <main className="flex-1 overflow-y-auto p-4 pt-0 pb-24">
+                        {filteredProductos.map(producto => (
+                            <div key={producto.id} onClick={() => onProductSelect(producto)} className="bg-white p-3 rounded-lg shadow mb-3 flex items-center gap-4 active:bg-gray-200 cursor-pointer">
+                                <img loading="lazy" src={producto.imagen_url || 'https://placehold.co/100x100/e2e8f0/e2e8f0?text=...'} alt={producto.nombre} className="w-16 h-16 rounded-md object-cover"/>
+                                <div className="flex-1">
+                                    <p className="font-semibold text-gray-800">{producto.nombre}</p>
+                                    <p className="text-sm text-blue-600 font-bold">${producto.precio_unitario}</p>
+                                    <p className={`text-xs font-bold ${producto.stock === 'Sí' ? 'text-green-500' : 'text-red-500'}`}>Stock: {producto.stock}</p>
+                                </div>
+                                {cart.find(item => item.producto.id === producto.id) && (
+                                    <div className="bg-blue-600 text-white rounded-full h-8 w-8 flex items-center justify-center font-bold">
+                                        {cart.find(item => item.producto.id === producto.id).cantidad}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </main>
+                    {cart.length > 0 && (
+                        <footer className="bg-white p-4 shadow-inner fixed bottom-0 w-full border-t">
+                            <button onClick={() => onShowCart(cart)} className="w-full bg-blue-600 text-white font-bold py-3 rounded-lg flex justify-between items-center">
+                                <div className="flex items-center gap-2"><ShoppingCartIcon className="h-6 w-6"/><span>{cart.reduce((acc, item) => acc + item.cantidad, 0)} items</span></div>
+                                <span>Ver Pedido</span><span>${cart.reduce((acc, item) => acc + (item.producto.precio_unitario * item.cantidad), 0).toFixed(2)}</span>
+                            </button>
+                        </footer>
+                    )}
+                </div>
+            );
+        };
+
+        const PedidoSummaryView = ({ cliente, pedido, setPedido, onBack, onSave, editingPedido, onCancelEdit, onAddMoreProducts }) => {
+            const [notas, setNotas] = React.useState(editingPedido ? editingPedido.notas_entrega : '');
+            const updateCantidad = (productoId, cantidadStr) => {
+                const cantidad = parseFloat(cantidadStr.replace(',', '.'));
+                setPedido(currentPedido => {
+                    if (isNaN(cantidad) || cantidad <= 0) {
+                        return currentPedido.filter(item => item.producto.id !== productoId);
+                    }
+                    return currentPedido.map(item => item.producto.id === productoId ? { ...item, cantidad: cantidad } : item);
+                });
+            };
+            const totalPedido = pedido.reduce((acc, item) => acc + (item.producto.precio_unitario * item.cantidad), 0);
+            return (
+                <div className="flex flex-col h-screen bg-gray-100">
+                    <header className="bg-white p-4 shadow-md sticky top-0 flex items-center gap-4 z-10">
+                        <button onClick={() => onBack(pedido)} className="text-blue-600"><ArrowLeftIcon className="h-6 w-6"/></button>
+                        <div><h2 className="font-bold text-lg">{editingPedido ? 'Editar Pedido' : 'Revisar Pedido'}</h2><p className="text-xs text-gray-500">{cliente.nombre_comercio}</p></div>
+                    </header>
+                    <main className="flex-1 overflow-y-auto p-4">
+                        <button onClick={() => onAddMoreProducts(pedido)} className="w-full bg-blue-100 text-blue-800 font-semibold py-3 rounded-lg mb-4 flex items-center justify-center gap-2">
+                            <PlusIcon className="h-5 w-5"/> Agregar más productos
+                        </button>
+                        {pedido.length === 0 && <p className="text-center text-gray-500 mt-8">El carrito está vacío.</p>}
+                        {pedido.map(item => (
+                            <div key={item.producto.id} className="bg-white p-3 rounded-lg shadow mb-3 flex items-center gap-4">
+                                <img loading="lazy" src={item.producto.imagen_url || 'https://placehold.co/100x100/e2e8f0/e2e8f0?text=...'} alt={item.producto.nombre} className="w-12 h-12 rounded-md object-cover"/>
+                                <div className="flex-1"><p className="font-semibold text-gray-800 text-sm">{item.producto.nombre}</p><p className="text-xs text-gray-500">${item.producto.precio_unitario} c/u</p></div>
+                                <div className="flex items-center gap-3">
+                                    <label className="text-sm font-medium">Cant:</label>
+                                    <input type="number" step="0.001" value={item.cantidad} onChange={(e) => updateCantidad(item.producto.id, e.target.value)} className="w-16 text-center border-gray-300 border rounded-lg p-1" min="0" />
+                                </div>
+                            </div>
+                        ))}
+                        <div className="mt-4"><label htmlFor="notas" className="block text-sm font-medium text-gray-700 mb-1">Notas para la entrega</label><textarea id="notas" value={notas} onChange={e => setNotas(e.target.value)} rows="3" className="w-full p-2 border rounded-lg" placeholder="Ej: Dejar en el depósito del fondo..."></textarea></div>
+                    </main>
+                    <footer className="bg-white p-4 shadow-inner sticky bottom-0 border-t">
+                        <div className="flex justify-between items-center font-bold text-xl mb-3"><span>Total:</span><span>${totalPedido.toFixed(2)}</span></div>
+                        <div className="flex gap-2">
+                            {editingPedido && (
+                                <button onClick={onCancelEdit} className="w-full bg-gray-500 text-white font-bold py-3 rounded-lg">Descartar Cambios</button>
+                            )}
+                            <button onClick={() => onSave(notas)} disabled={pedido.length === 0} className="w-full bg-green-500 text-white font-bold py-3 rounded-lg disabled:bg-gray-400">{editingPedido ? 'Guardar Cambios' : 'Confirmar Pedido'}</button>
+                        </div>
+                    </footer>
+                </div>
+            );
+        };
+
+        const PedidosPendientesView = ({ onBack, onSync, onEditPedido, onViewPedido, onDeletePedido, user, onLoginRequest }) => {
+            const [pedidos, setPedidos] = React.useState([]);
+            const [syncing, setSyncing] = React.useState(false);
+            React.useEffect(() => {
+                const storedPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes') || '[]');
+                setPedidos(storedPedidos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)));
+            }, []);
+            const handleSyncClick = async () => {
+                if (!user) {
+                    onLoginRequest();
+                    return;
+                }
+                setSyncing(true);
+                await onSync();
+                setSyncing(false);
+                const storedPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes') || '[]');
+                setPedidos(storedPedidos.sort((a, b) => new Date(b.fecha) - new Date(a.fecha)));
+            };
+            const handleDelete = (pedidoId) => {
+                if (window.confirm('¿Estás seguro de que quieres eliminar este pedido? Esta acción no se puede deshacer.')) {
+                    onDeletePedido(pedidoId);
+                    setPedidos(current => current.filter(p => p.id_local !== pedidoId));
+                }
+            };
+            return (
+                <div className="bg-gray-100 min-h-screen">
+                    <header className="bg-white p-4 shadow-md sticky top-0 flex items-center justify-between z-10">
+                        <div className="flex items-center gap-4"><button onClick={onBack} className="text-blue-600"><ArrowLeftIcon className="h-6 w-6"/></button><h2 className="font-bold text-lg">Pedidos Guardados</h2></div>
+                        <button onClick={handleSyncClick} disabled={syncing} className="bg-green-500 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2 disabled:bg-gray-400">
+                            {syncing ? <Spinner className="border-white h-5 w-5"/> : <SyncIcon className="h-5 w-5"/>} {user ? 'Sincronizar' : 'Iniciar Sesión'}
+                        </button>
+                    </header>
+                    <main className="p-4">
+                        {pedidos.length === 0 && !syncing && <p className="text-center text-gray-500 mt-8">No hay pedidos guardados en el dispositivo.</p>}
+                        {pedidos.map(p => (
+                            <div key={p.id_local} className="bg-white p-4 rounded-lg shadow mb-3 flex justify-between items-center">
+                                <div>
+                                    <p className="font-bold text-gray-800">{JSON.parse(localStorage.getItem('clientes') || '[]').find(c => c.id === p.cliente_id)?.nombre_comercio || 'Cliente no encontrado'}</p>
+                                    <p className="text-sm text-gray-600">{p.items.length} items</p>
+                                    <p className="text-xs text-gray-400">Creado: {new Date(p.fecha).toLocaleString()}</p>
+                                    <StatusBadge status={p.status} />
+                                </div>
+                                <div className="flex gap-2">
+                                    <button onClick={() => onViewPedido(p)} className="text-gray-400 hover:text-blue-600 p-2"><EyeIcon className="h-5 w-5"/></button>
+                                    {p.status !== 'synced' && (
+                                        <>
+                                            <button onClick={() => onEditPedido(p)} className="text-gray-400 hover:text-blue-600 p-2"><EditIcon className="h-5 w-5"/></button>
+                                            <button onClick={() => handleDelete(p.id_local)} className="text-gray-400 hover:text-red-600 p-2"><TrashIcon className="h-5 w-5"/></button>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </main>
+                </div>
+            );
+        };
+        
+        const HistorialClienteView = ({ cliente, onBack, onViewPedido }) => {
+            const [pedidos, setPedidos] = React.useState([]);
+            const [productos, setProductos] = React.useState([]);
+
+            React.useEffect(() => {
+                const todosLosPedidos = JSON.parse(localStorage.getItem('pedidos_pendientes') || '[]');
+                const productosGuardados = JSON.parse(localStorage.getItem('productos') || '[]');
+                
+                const pedidosDelCliente = todosLosPedidos
+                    .filter(p => p.cliente_id === cliente.id)
+                    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+                setPedidos(pedidosDelCliente);
+                setProductos(productosGuardados);
+            }, [cliente.id]);
+
+            const calcularTotal = (items) => {
+                return items.reduce((total, item) => {
+                    const producto = productos.find(p => p.id === item.producto_id);
+                    return total + (producto ? producto.precio_unitario * item.cantidad : 0);
+                }, 0).toFixed(2);
+            };
+
+            return (
+                <div className="bg-gray-100 min-h-screen">
+                    <header className="bg-white p-4 shadow-md sticky top-0 flex items-center gap-4 z-10">
+                        <button onClick={onBack} className="text-blue-600"><ArrowLeftIcon className="h-6 w-6"/></button>
+                        <div>
+                            <h2 className="font-bold text-lg">Historial de Pedidos</h2>
+                            <p className="text-xs text-gray-500">{cliente.nombre_comercio}</p>
+                        </div>
+                    </header>
+                    <main className="p-4">
+                        {pedidos.length === 0 ? (
+                            <p className="text-center text-gray-500 mt-8">No hay pedidos guardados para este cliente.</p>
+                        ) : (
+                            pedidos.map(pedido => (
+                                <div key={pedido.id_local} className="bg-white p-4 rounded-lg shadow mb-3 cursor-pointer" onClick={() => onViewPedido(pedido)}>
+                                    <div className="flex justify-between items-center mb-2 pb-2 border-b">
+                                        <div>
+                                            <p className="font-bold text-gray-800">Pedido del {new Date(pedido.fecha).toLocaleDateString()}</p>
+                                            <StatusBadge status={pedido.status} />
+                                        </div>
+                                        <p className="font-semibold text-blue-600">Total: ${calcularTotal(pedido.items)}</p>
+                                    </div>
+                                    <div className="text-center mt-2">
+                                        <button className="text-blue-600 font-semibold text-sm">Ver Detalles</button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </main>
+                </div>
+            );
+        };
+
+        const PedidoDetailView = ({ pedido, onBack }) => {
+            const [productos, setProductos] = React.useState([]);
+            React.useEffect(() => {
+                setProductos(JSON.parse(localStorage.getItem('productos') || '[]'));
+            }, []);
+
+            const total = pedido.items.reduce((acc, item) => {
+                const producto = productos.find(p => p.id === item.producto_id);
+                return acc + (producto ? producto.precio_unitario * item.cantidad : 0);
+            }, 0);
+
+            return (
+                <div className="bg-gray-100 min-h-screen">
+                    <header className="bg-white p-4 shadow-md sticky top-0 flex items-center gap-4 z-10">
+                        <button onClick={onBack} className="text-blue-600"><ArrowLeftIcon className="h-6 w-6"/></button>
+                        <h2 className="font-bold text-lg">Detalles del Pedido</h2>
+                    </header>
+                    <main className="p-4">
+                        <div className="bg-white p-4 rounded-lg shadow mb-4">
+                            <p className="font-bold text-gray-800">{JSON.parse(localStorage.getItem('clientes') || '[]').find(c => c.id === pedido.cliente_id)?.nombre_comercio || 'Cliente no encontrado'}</p>
+                            <p className="text-sm text-gray-600">Creado: {new Date(pedido.fecha).toLocaleString()}</p>
+                            <p className="text-sm text-gray-600">Notas: {pedido.notas_entrega || 'Sin notas'}</p>
+                            <StatusBadge status={pedido.status} />
+                        </div>
+                        {pedido.items.map(item => {
+                            const producto = productos.find(p => p.id === item.producto_id);
+                            return (
+                                <div key={item.producto_id} className="bg-white p-3 rounded-lg shadow mb-3 flex items-center gap-4">
+                                    <img loading="lazy" src={producto?.imagen_url || 'https://placehold.co/100x100/e2e8f0/e2e8f0?text=...'} alt={producto?.nombre} className="w-12 h-12 rounded-md object-cover"/>
+                                    <div className="flex-1">
+                                        <p className="font-semibold text-gray-800 text-sm">{producto?.nombre || 'Producto no encontrado'}</p>
+                                        <p className="text-xs text-gray-500">${producto?.precio_unitario || 0} x {item.cantidad} = ${( (producto?.precio_unitario || 0) * item.cantidad).toFixed(2)}</p>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="flex justify-between items-center font-bold text-xl">
+                                <span>Total:</span>
+                                <span>${total.toFixed(2)}</span>
+                            </div>
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        // --- Componente Principal de la Aplicación ---
+        function App() {
+            // --- ESTADO DE LA APLICACIÓN ---
+            const [user, setUser] = React.useState(JSON.parse(localStorage.getItem('vendedor_user')));
+            const [token, setToken] = React.useState(localStorage.getItem('vendedor_token'));
+            const [lastSyncTime, setLastSyncTime] = React.useState(localStorage.getItem('last_sync_time'));
+            const [loading, setLoading] = React.useState(false);
+            const [syncInProgress, setSyncInProgress] = React.useState(false);
+            const [error, setError] = React.useState(null);
+            const [pageHistory, setPageHistory] = React.useState(['home']);
+            const currentPage = pageHistory[pageHistory.length - 1];
+            const [selectedCliente, setSelectedCliente] = React.useState(null);
+            const [editingCliente, setEditingCliente] = React.useState(null);
+            const [currentPedido, setCurrentPedido] = React.useState([]);
+            const [editingPedido, setEditingPedido] = React.useState(null);
+            const [productForQuantity, setProductForQuantity] = React.useState(null);
+            const [selectedPedido, setSelectedPedido] = React.useState(null);
+            const [toast, setToast] = React.useState(null);
+
+            // --- NAVEGACIÓN ---
+            const navigateTo = (page) => setPageHistory(prev => [...prev, page]);
+            const navigateBack = () => {
+                if (pageHistory.length > 1) {
+                    setPageHistory(prev => prev.slice(0, -1));
+                }
+            };
+
+            React.useEffect(() => {
+                const handleBackButton = (e) => {
+                    e.preventDefault();
+                    navigateBack();
+                };
+                window.addEventListener('popstate', handleBackButton);
+                return () => window.removeEventListener('popstate', handleBackButton);
+            }, []);
+
+            // --- MANEJO DE DATOS (LÓGICA PRINCIPAL) ---
+
+            const handleLogin = async (email, password) => {
+                setLoading(true);
+                setError(null);
+                try {
+                    const loginResponse = await fetch(`${API_URL}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+                    const data = await loginResponse.json();
+                    if (!loginResponse.ok) throw new Error(data.message || 'Error al iniciar sesión.');
+                    
+                    localStorage.setItem('vendedor_token', data.token);
+                    localStorage.setItem('vendedor_user', JSON.stringify(data.user));
+                    setToken(data.token);
+                    setUser(data.user);
+                    
+                    await handleSync(data.token);
+                    setPageHistory(['home']);
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const handleLogout = () => {
+                localStorage.removeItem('vendedor_token');
+                localStorage.removeItem('vendedor_user');
+                setUser(null);
+                setToken(null);
+                setToast({ message: 'Sesión cerrada correctamente', type: 'info' });
+                setPageHistory(['login']);
+            };
+
+            const handleSync = async (overrideToken = token) => {
+                if (!overrideToken) {
+                    setToast({ message: 'Debes iniciar sesión para sincronizar', type: 'error' });
+                    navigateTo('login');
+                    return;
+                }
+                setSyncInProgress(true);
+                try {
+                    const [clientesRes, productosRes] = await Promise.all([
+                        fetch(`${API_URL}/clientes`, { headers: { Authorization: `Bearer ${overrideToken}` } }),
+                        fetch(`${API_URL}/productos`, { headers: { Authorization: `Bearer ${overrideToken}` } })
+                    ]);
+                    if (!clientesRes.ok || !productosRes.ok) throw new Error('Error al descargar listas.');
+                    const clientesData = await clientesRes.json();
+                    const productosData = await productosRes.json();
+                    localStorage.setItem('clientes', JSON.stringify(clientesData));
+                    localStorage.setItem('productos', JSON.stringify(productosData));
+
+                    const pedidosPendientes = JSON.parse(localStorage.getItem('pedidos_pendientes') || '[]');
+                    const toSync = pedidosPendientes.filter(p => p.status === 'pending_sync');
+                    for (const pedido of toSync) {
+                        const res = await fetch(`${API_URL}/pedidos`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${overrideToken}` },
+                            body: JSON.stringify(pedido)
+                        });
+                        if (res.ok) {
+                            pedido.status = 'synced';
+                            pedido.id = (await res.json()).id;
+                        } else {
+                            pedido.status = 'sync_failed';
+                        }
+                    }
+                    localStorage.setItem('pedidos_pendientes', JSON.stringify(pedidosPendientes));
+                    
+                    const now = new Date().toISOString();
+                    setLastSyncTime(now);
+                    localStorage.setItem('last_sync_time', now);
+                    setToast({ message: 'Sincronización completada', type: 'success' });
+                } catch (err) {
+                    setToast({ message: `Error de Sincronización: ${err.message}`, type: 'error' });
+                } finally {
+                    setSyncInProgress(false);
+                }
+            };
+
+            const handleSaveCliente = (formData) => {
+                const clientes = JSON.parse(localStorage.getItem('clientes') || '[]');
+                const isEditing = !!formData.id;
+                let updatedClientes;
+
+                if (isEditing) {
+                    updatedClientes = clientes.map(c => c.id === formData.id ? formData : c);
+                } else {
+                    const newCliente = { ...formData, id: `local_${Date.now()}` };
+                    updatedClientes = [...clientes, newCliente];
+                }
+                localStorage.setItem('clientes', JSON.stringify(updatedClientes));
+                setToast({ message: `Cliente ${isEditing ? 'actualizado' : 'creado'} localmente.`, type: 'success' });
+                navigateBack();
+            };
+
+            const handleSavePedido = (notas) => {
+                const pedidosPendientes = JSON.parse(localStorage.getItem('pedidos_pendientes') || '[]');
+                if (editingPedido) {
+                    const updatedPedidos = pedidosPendientes.map(p => {
+                        if (p.id_local === editingPedido.id_local) {
+                            return {
+                                ...p,
+                                cliente_id: selectedCliente ? selectedCliente.id : null, // Asegurar que el id del cliente se actualice
+                                items: currentPedido.map(item => ({ producto_id: item.producto.id, cantidad: item.cantidad })),
+                                notas_entrega: notas,
+                                status: 'pending_sync'
+                            };
+                        }
+                        return p;
+                    });
+                    localStorage.setItem('pedidos_pendientes', JSON.stringify(updatedPedidos));
+                    setToast({ message: 'Pedido actualizado correctamente', type: 'success' });
+                } else {
+                    const nuevoPedido = {
+                        id_local: `local_pedido_${Date.now()}`,
+                        cliente_id: selectedCliente ? selectedCliente.id : null, // Usar null si no hay cliente
+                        vendedor_id: user ? user.id : 'offline',
+                        fecha: new Date().toISOString(),
+                        items: currentPedido.map(item => ({
+                            producto_id: item.producto.id,
+                            cantidad: item.cantidad
+                        })),
+                        notas_entrega: notas,
+                        status: 'pending_sync'
+                    };
+                    pedidosPendientes.push(nuevoPedido);
+                    localStorage.setItem('pedidos_pendientes', JSON.stringify(pedidosPendientes));
+                    setToast({ message: 'Pedido guardado para sincronizar', type: 'success' });
+                }
+
+                setCurrentPedido([]);
+                setEditingPedido(null);
+                setPageHistory(['home']);
+            };
+            
+            const handleSaveQuantity = (product, quantity) => {
+                setCurrentPedido(current => {
+                    const existingItem = current.find(item => item.producto.id === product.id);
+                    if (quantity > 0) {
+                        if (existingItem) {
+                            return current.map(item => item.producto.id === product.id ? { ...item, cantidad: quantity } : item);
+                        }
+                        return [...current, { producto: product, cantidad: quantity }];
+                    } else {
+                        return current.filter(item => item.producto.id !== product.id);
+                    }
+                });
+                setProductForQuantity(null);
+            };
+
+            const onDeletePedido = (pedidoId) => {
+                const pedidosPendientes = JSON.parse(localStorage.getItem('pedidos_pendientes') || '[]');
+                const updatedPedidos = pedidosPendientes.filter(p => p.id_local !== pedidoId);
+                localStorage.setItem('pedidos_pendientes', JSON.stringify(updatedPedidos));
+                setToast({ message: 'Pedido eliminado permanentemente', type: 'success' });
+            };
+
+            // --- RENDERIZADO DE VISTAS ---
+            const renderPage = () => {
+                switch (currentPage) {
+                    case 'home':
+                        return <VendedorHomePage user={user} navigateTo={navigateTo} />;
+                    case 'login':
+                        return <LoginPage onLogin={handleLogin} loading={loading} error={error} onBack={() => setPageHistory(['home'])} />;
+                    case 'config':
+                        return <ConfiguracionView onBack={(page) => page === 'login' ? navigateTo('login') : navigateBack()} onLogout={handleLogout} user={user} onSync={handleSync} lastSyncTime={lastSyncTime} syncInProgress={syncInProgress} />;
+                    case 'clientes':
+                        return <ClientesView onBack={navigateBack} onSelectCliente={(cliente) => { setSelectedCliente(cliente); setCurrentPedido([]); setEditingPedido(null); navigateTo('pedido'); }} onEditCliente={(c) => { setEditingCliente(c); navigateTo('cliente_form'); }} onAddCliente={() => { setEditingCliente(null); navigateTo('cliente_form'); }} onShowHistory={(c) => { setSelectedCliente(c); navigateTo('historial'); }} />;
+                    case 'cliente_form':
+                        return <ClienteFormView onBack={navigateBack} cliente={editingCliente} onSave={handleSaveCliente} />;
+                    case 'pedido':
+                        return <PedidoView cliente={selectedCliente} onBack={(cart) => { setCurrentPedido(cart); navigateBack(); }} onShowCart={(cart) => { setCurrentPedido(cart); navigateTo('pedido_summary'); }} cart={currentPedido} onProductSelect={(product) => setProductForQuantity(product)} />;
+                    case 'pedido_summary':
+                        return <PedidoSummaryView cliente={selectedCliente} pedido={currentPedido} setPedido={setCurrentPedido} onBack={(cart) => { setCurrentPedido(cart); navigateTo('pedido'); }} onSave={handleSavePedido} editingPedido={editingPedido} onCancelEdit={() => { setEditingPedido(null); setCurrentPedido([]); navigateTo('pendientes'); }} onAddMoreProducts={(cart) => { setCurrentPedido(cart); navigateTo('pedido'); }} />;
+                    case 'pendientes':
+                        return <PedidosPendientesView onBack={navigateBack} onSync={handleSync} 
+                            onEditPedido={(p) => {
+                                const clientes = JSON.parse(localStorage.getItem('clientes') || '[]');
+                                const productos = JSON.parse(localStorage.getItem('productos') || '[]');
+                                const cliente = clientes.find(c => c.id === p.cliente_id);
+
+                                const clienteFinal = cliente || { id: p.cliente_id, nombre_comercio: 'Cliente no encontrado', direccion: '(Datos no disponibles)' };
+                                
+                                setSelectedCliente(clienteFinal);
+                                setEditingPedido(p);
+                                const cart = p.items.map(item => ({ producto: productos.find(prod => prod.id === item.producto_id), cantidad: item.cantidad })).filter(item => item.producto);
+                                setCurrentPedido(cart);
+                                navigateTo('pedido_summary');
+
+                                if (!cliente) {
+                                    setToast({ message: 'Aviso: No se encontraron los datos del cliente.', type: 'info' });
+                                }
+                            }} 
+                            onViewPedido={(p) => { setSelectedPedido(p); navigateTo('pedido_detail'); }} 
+                            onDeletePedido={onDeletePedido} 
+                            user={user} 
+                            onLoginRequest={() => navigateTo('login')} 
+                        />;
+                    case 'historial':
+                        return <HistorialClienteView cliente={selectedCliente} onBack={navigateBack} onViewPedido={(pedido) => { setSelectedPedido(pedido); navigateTo('pedido_detail'); }} />;
+                    case 'pedido_detail':
+                        return <PedidoDetailView pedido={selectedPedido} onBack={navigateBack} />;
+                    default:
+                        return <VendedorHomePage user={user} navigateTo={navigateTo} />;
+                }
+            };
+
+            return (
+                <div id="main-app" className="no-print relative">
+                    {renderPage()}
+                    {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+                    {productForQuantity && (
+                        <QuantityModal
+                            product={productForQuantity}
+                            existingQuantity={(currentPedido.find(item => item.producto.id === productForQuantity.id) || {}).cantidad || 0}
+                            onSave={handleSaveQuantity}
+                            onCancel={() => setProductForQuantity(null)}
+                        />
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+    <script>
+        // Service Worker
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('SW Registrado!', reg))
+                    .catch(err => console.log('Error SW:', err));
+            });
+        }
+    </script>
+</body>
+</html>
