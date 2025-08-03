@@ -377,6 +377,7 @@
                         <h1 className="text-3xl font-bold text-gray-800">Gestión de Productos</h1>
                         <input type="text" placeholder="Buscar por nombre o SKU..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="w-full max-w-xs px-4 py-2 border border-gray-300 rounded-lg"/>
                         <div className="flex gap-2">
+                            <!-- Boton para importar los productos -->
                             {isAdmin && <button onClick={onShowImportModal} className="bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 px-4 rounded-lg flex items-center shrink-0"><UploadIcon className="h-5 w-5 mr-2" /> Importar</button>}
                             <button onClick={handleExport} className="bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-lg flex items-center shrink-0"><DownloadIcon className="h-5 w-5 mr-2" /> Exportar</button>
                             {isAdmin && (<button onClick={() => onShowProductoForm({})} className="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg flex items-center shrink-0"><PlusIcon className="h-5 w-5 mr-2" /> Agregar</button>)}
@@ -712,8 +713,11 @@
                             <div className="flex justify-between items-center p-4 border-b">
                                 <h2 className="text-xl font-bold text-gray-800">Detalle del Pedido #{pedidoId}</h2>
                                 <div className="flex items-center gap-2">
+                                    // -- Boton en panel de pedido para ver los logs respecto al mismo --
                                     <button onClick={fetchLogs} className="relative flex items-center gap-2 bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-3 rounded-lg text-sm"><HistoryIcon className="h-5 w-5"/>Logs{integrityIssues.length > 0 && <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 border-2 border-white"></span>}</button>
+                                    // -- Boton para imprimir el pedido para ser armado --
                                     <button onClick={() => handlePrint('printableAreaAssembly')} className="flex items-center gap-2 bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-3 rounded-lg text-sm"><CheckSquareIcon className="h-5 w-5"/>P/ Armar</button>
+                                    // -- Boton para imprimir el pedido Final --
                                     <button onClick={() => handlePrint('printableArea')} className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-3 rounded-lg text-sm"><PrintIcon className="h-5 w-5"/>Imprimir</button>
                                     <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-2"><CloseIcon/></button>
                                 </div>

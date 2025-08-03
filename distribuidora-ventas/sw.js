@@ -28,18 +28,20 @@ self.addEventListener('install', event => {
 
 // Evento 'fetch': Se dispara cada vez que la página pide un recurso (un archivo, una imagen, una llamada a la API).
 // Implementa una estrategia "Cache First": primero busca en el caché y si no lo encuentra, va a la red.
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request)
-      .then(response => {
-        // Si el recurso está en el caché, lo devuelve desde ahí.
-        if (response) {
-          return response;
-        }
-        // Si no, lo pide a la red.
-        return fetch(event.request);
-      })
-  );
+// sw.js
+self.addEventListener('fetch', (event) => {
+    if (event.request.url.match(/\.(png|jpg|jpeg|webp)$/)) {
+        event.respondWith(
+            caches.match(event.request).then(response => {
+                return response || fetch(event.request).then(fetchResponse => {
+                    caches.open('images-cache').then(cache => {
+                        cache.put(event.request, fetchResponse.clone());
+                    });
+                    return fetchResponse;
+                });
+            })
+        );
+    }
 });
 
 // Evento 'activate': Se dispara cuando el nuevo Service Worker se activa.
